@@ -101,14 +101,21 @@ if mode == "🔍 Single Stock Deep Analysis":
         st.write("")
         analyze_btn = st.button("🚀 Analyze Stock", use_container_width=True)
 
-    # Blank Landing Page state
-    if not selected_company_info and 'analysis_data' not in st.session_state:
+    # Handle quick search button clicks from landing page
+    if 'quick_search' in st.session_state and st.session_state['quick_search'] and not selected_company_info:
+        quick_results = fetcher.search_company(st.session_state['quick_search'])
+        if quick_results:
+            selected_company_info = quick_results[0]
+            st.session_state['quick_search'] = None
+
+    # Blank Landing Page state when no stock is active
+    if not selected_company_info:
         st.info("👋 **Welcome to Screener AI Stock Analyzer!**")
         st.markdown("""
         ### How to use this tool:
         1. **Type a stock name or ticker** in the search box above (e.g., `RELIANCE`, `TCS`, `INFY`, `TATAMOTORS`).
-        2. **Select the matching company** from the dropdown menu.
-        3. Click **🚀 Analyze Stock** to trigger QoQ Financial Extraction, FII/DII Shareholding, Piotroski Health Score, and AI Report generation.
+        2. **Select the matching company** from the dropdown menu to immediately view its financials, ratios, and news!
+        3. Click **🚀 Analyze Stock** to trigger deep AI report synthesis.
         """)
         
         st.markdown("#### ⚡ Quick Example Stocks:")
@@ -126,54 +133,40 @@ if mode == "🔍 Single Stock Deep Analysis":
             st.session_state['quick_search'] = "TATAMOTORS"
             st.rerun()
 
-    # Handle quick search button clicks
-    if 'quick_search' in st.session_state and st.session_state['quick_search'] and not selected_company_info:
-        quick_results = fetcher.search_company(st.session_state['quick_search'])
-        if quick_results:
-            selected_company_info = quick_results[0]
-            st.session_state['quick_search'] = None
-
-    # Trigger analysis when Analyze button is clicked OR if quick stock button selected
-    if analyze_btn and selected_company_info:
+    # Load and render data immediately whenever a company is selected from dropdown
+    if selected_company_info:
         ticker = extract_ticker(selected_company_info['url'])
         company_id = selected_company_info.get('id', '')
 
-        with st.spinner(f"Fetching financial statements & web news for {selected_company_info['name']}..."):
+        with st.spinner(f"Extracting financial statements & web news for {selected_company_info['name']}..."):
             c_data = cached_get_company_data(ticker)
             n_data = cached_get_stock_news(selected_company_info['name'], limit=8, freshness_days=news_freshness)
             ch_data = cached_get_chart_data(company_id) if company_id else {}
 
-            report = analyst.generate_analysis(
-                c_data['name'],
-                c_data['top_ratios'],
-                c_data['tables'],
-                n_data,
-                ch_data
-            )
+        # Generate or retrieve AI report if Analyze Stock button clicked or key present
+        report_key = f"report_{ticker}_{gemma_model}"
+        if analyze_btn or report_key not in st.session_state:
+            with st.spinner(f"Synthesizing AI Equity Research Report for {selected_company_info['name']}..."):
+                st.session_state[report_key] = analyst.generate_analysis(
+                    c_data['name'],
+                    c_data['top_ratios'],
+                    c_data['tables'],
+                    n_data,
+                    ch_data
+                )
+                st.session_state[f"provider_{ticker}"] = analyst.last_provider_used
+                st.session_state[f"error_{ticker}"] = analyst.last_error
 
-            st.session_state['analysis_data'] = {
-                'info': selected_company_info,
-                'ticker': ticker,
-                'company_data': c_data,
-                'news_articles': n_data,
-                'chart_data': ch_data,
-                'report': report,
-                'provider_used': analyst.last_provider_used,
-                'error': analyst.last_error
-            }
+        report = st.session_state.get(report_key, "")
+        provider_used = st.session_state.get(f"provider_{ticker}", analyst.last_provider_used)
+        last_err = st.session_state.get(f"error_{ticker}", analyst.last_error)
 
-    # Render persisted analysis from session state
-    if 'analysis_data' in st.session_state:
-        res = st.session_state['analysis_data']
-        c_data = res['company_data']
-        n_data = res['news_articles']
-        ch_data = res['chart_data']
         tables = c_data['tables']
         scores = c_data.get('health_scores', {})
 
         basis_str = "Consolidated Financials" if c_data.get('is_consolidated') else "Standalone Financials"
 
-        st.markdown(f"## 📌 {c_data['name']} (`{res['ticker']}`)")
+        st.markdown(f"## 📌 {c_data['name']} (`{ticker}`)")
         st.caption(f"📊 Reporting Basis: **{basis_str}** | 🛡️ {scores.get('health_label', '')} (Piotroski F-Score: **{scores.get('piotroski_f_score', 0)}/9**)")
 
         # Manage Quick Ratios Custom Selector
@@ -182,7 +175,6 @@ if mode == "🔍 Single Stock Deep Analysis":
         all_keys = list(all_metrics.keys())
         default_keys = list(top_ratios.keys())
 
-        # Ensure custom_ratios is stored safely in session state without Streamlit widget key conflict
         if 'custom_ratios' not in st.session_state or not st.session_state['custom_ratios']:
             st.session_state['custom_ratios'] = default_keys
 
@@ -226,10 +218,10 @@ if mode == "🔍 Single Stock Deep Analysis":
         # Tab 1: AI Report
         with tab_ai:
             st.markdown(f"### 🤖 AI Equity Research Report ({gemma_model})")
-            if res.get('error'):
-                st.warning(f"⚠️ {res['error']}")
-            st.info(f"⚙️ **Engine Provider Used:** `{res.get('provider_used', 'N/A')}`")
-            st.markdown(res['report'])
+            if last_err:
+                st.warning(f"⚠️ {last_err}")
+            st.info(f"⚙️ **Engine Provider Used:** `{provider_used or 'N/A'}`")
+            st.markdown(report)
 
         # Tab 2: QoQ Financials
         with tab_qoq:
@@ -333,7 +325,7 @@ elif mode == "⚔️ Compare Two Stocks":
 
     compare_btn = st.button("⚔️ Run Head-to-Head Comparison", use_container_width=True)
 
-    if compare_btn and s1_info and s2_info:
+    if (compare_btn or (s1_info and s2_info)) and s1_info and s2_info:
         t1 = extract_ticker(s1_info['url'])
         t2 = extract_ticker(s2_info['url'])
 
@@ -344,23 +336,6 @@ elif mode == "⚔️ Compare Two Stocks":
             comp_report = analyst.generate_comparison_analysis(
                 s1_info['name'], d1, s2_info['name'], d2
             )
-
-            st.session_state['comparison_data'] = {
-                's1_info': s1_info,
-                's2_info': s2_info,
-                'd1': d1,
-                'd2': d2,
-                'report': comp_report,
-                'provider_used': analyst.last_provider_used,
-                'error': analyst.last_error
-            }
-
-    if 'comparison_data' in st.session_state:
-        c_res = st.session_state['comparison_data']
-        s1_info = c_res['s1_info']
-        s2_info = c_res['s2_info']
-        d1 = c_res['d1']
-        d2 = c_res['d2']
 
         st.markdown(f"## ⚔️ {s1_info['name']}  VS  {s2_info['name']}")
 
@@ -381,7 +356,7 @@ elif mode == "⚔️ Compare Two Stocks":
 
         st.markdown("---")
         st.markdown(f"### 🤖 Comparative AI Analysis & Horizon Winners")
-        if c_res.get('error'):
-            st.warning(f"⚠️ {c_res['error']}")
-        st.info(f"⚙️ **Engine Provider Used:** `{c_res.get('provider_used', 'N/A')}`")
-        st.markdown(c_res['report'])
+        if analyst.last_error:
+            st.warning(f"⚠️ {analyst.last_error}")
+        st.info(f"⚙️ **Engine Provider Used:** `{analyst.last_provider_used or 'N/A'}`")
+        st.markdown(comp_report)
