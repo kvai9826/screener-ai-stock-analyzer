@@ -1,0 +1,23 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Streamlit local secrets
+.streamlit/secrets.toml
+
+# Environment files with sensitive API keys
+.env
+.env.local
+
+# MacOS files
+.DS_Store
+
+# PyCharm / IDE files
+.idea/
+.vscode/
