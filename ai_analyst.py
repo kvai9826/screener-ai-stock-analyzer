@@ -7,7 +7,7 @@ import socket
 from config import Config
 
 class AIStockAnalyst:
-    """Financial Analyst AI engine using OpenRouter free LLM models with local rule engine failover."""
+    """Financial Analyst AI engine using OpenRouter free LLM models (e.g. Gemma 4 31B) with local rule engine failover."""
 
     def __init__(self, openrouter_api_key=None, model=None):
         self.openrouter_api_key = Config.get_openrouter_key(openrouter_api_key)
@@ -20,7 +20,6 @@ class AIStockAnalyst:
         prompt = self._build_deep_prompt(company_name, ratios, tables, news_articles, chart_data)
         self.last_error = None
 
-        # 1. Try OpenRouter API first
         if self.openrouter_api_key and len(self.openrouter_api_key) > 5:
             res, err = self._call_openrouter_with_retry(prompt, self.openrouter_model)
             if res:
@@ -29,7 +28,6 @@ class AIStockAnalyst:
             if err:
                 self.last_error = f"OpenRouter ({self.openrouter_model}): {err}"
 
-        # 2. Local Fallback Engine if no key or API failure
         if not self.last_error and not self.openrouter_api_key:
             self.last_error = "No OpenRouter API Key provided. Enter your free key in the sidebar or .env file."
 
@@ -236,7 +234,7 @@ Compare **{comp1_name}** vs **{comp2_name}**. Base all conclusions strictly on s
         if code in (401, 403):
             return f"Authentication Error ({code}): Invalid or missing API key for {provider}."
         elif code == 404:
-            return f"Model Not Found Error ({code}): The specified free model is unavailable."
+            return f"Model Not Found Error ({code}): The specified model '{self.openrouter_model}' is unavailable."
         elif code == 429:
             return f"Rate Limit Exceeded ({code}): Rate limit reached on OpenRouter free tier."
         elif code >= 500:

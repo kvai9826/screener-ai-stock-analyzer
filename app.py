@@ -33,7 +33,7 @@ def cached_get_stock_news(company_name: str, limit: int, freshness_days: int):
 def cached_get_chart_data(company_id: str):
     return fetcher.get_chart_data(company_id)
 
-# Sidebar - API Credentials & Settings (OpenRouter & Free Models Only)
+# Sidebar - API Credentials & Top-Tier Free Model Options
 st.sidebar.header("🔑 OpenRouter AI Credentials")
 openrouter_key = st.sidebar.text_input(
     "OpenRouter API Key (Free)",
@@ -42,18 +42,26 @@ openrouter_key = st.sidebar.text_input(
     help="Get free API key from openrouter.ai/keys"
 )
 
+# Top-Tier Free AI Models (Gemma 4 31B, Nemotron Reasoning, Llama 3.3 70B, DeepSeek R1)
+model_options = [
+    "google/gemma-4-31b-it:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-r1:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+    "openrouter/free"
+]
+
+if Config.OPENROUTER_MODEL in model_options:
+    model_options.remove(Config.OPENROUTER_MODEL)
+model_options.insert(0, Config.OPENROUTER_MODEL)
+
 gemma_model = st.sidebar.selectbox(
     "Select Free AI Model:",
-    [
-        Config.OPENROUTER_MODEL,
-        "google/gemma-2-9b-it:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "qwen/qwen-2.5-72b-instruct:free",
-        "deepseek/deepseek-r1:free",
-        "openrouter/free"
-    ],
+    options=model_options,
     index=0,
-    help="OpenRouter free model tier"
+    help="Select top-tier free OpenRouter AI models"
 )
 
 news_freshness = st.sidebar.select_slider(
@@ -146,7 +154,7 @@ if mode == "🔍 Single Stock Deep Analysis":
         # Generate or retrieve AI report if Analyze Stock button clicked or key present
         report_key = f"report_{ticker}_{gemma_model}"
         if analyze_btn or report_key not in st.session_state:
-            with st.spinner(f"Synthesizing AI Equity Research Report for {selected_company_info['name']}..."):
+            with st.spinner(f"Synthesizing AI Equity Research Report using {gemma_model}..."):
                 st.session_state[report_key] = analyst.generate_analysis(
                     c_data['name'],
                     c_data['top_ratios'],
@@ -355,7 +363,7 @@ elif mode == "⚔️ Compare Two Stocks":
         st.dataframe(pd.DataFrame(comp_rows), use_container_width=True)
 
         st.markdown("---")
-        st.markdown(f"### 🤖 Comparative AI Analysis & Horizon Winners")
+        st.markdown(f"### 🤖 Comparative AI Analysis & Horizon Winners ({gemma_model})")
         if analyst.last_error:
             st.warning(f"⚠️ {analyst.last_error}")
         st.info(f"⚙️ **Engine Provider Used:** `{analyst.last_provider_used or 'N/A'}`")

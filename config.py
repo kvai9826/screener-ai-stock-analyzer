@@ -5,13 +5,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    """Centralized Configuration Manager for Screener AI Stock Analyzer (OpenRouter & Free Models Only)."""
+    """Centralized Configuration Manager for Screener AI Stock Analyzer."""
     
     # OpenRouter API Key
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 
-    # Model Selector (Free Models on OpenRouter)
-    OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemma-2-9b-it:free").strip()
+    # Default Top-Tier Free Model (Gemma 4 31B)
+    OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemma-4-31b-it:free").strip()
 
     # Network & Request Timeouts (seconds)
     DEFAULT_TIMEOUT = int(os.getenv("DEFAULT_TIMEOUT", "20"))
