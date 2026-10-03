@@ -5,20 +5,13 @@ import urllib.request
 import urllib.error
 import socket
 from config import Config
-from utils import validate_numerical_claims, safe_float
 
 class AIStockAnalyst:
-    """Institutional-grade AI Financial Analyst engine supporting OpenRouter, Google Gemini, and Groq with robust failover."""
+    """Financial Analyst AI engine using OpenRouter free LLM models with local rule engine failover."""
 
-    def __init__(self, openrouter_api_key=None, gemini_api_key=None, groq_api_key=None, model=None):
+    def __init__(self, openrouter_api_key=None, model=None):
         self.openrouter_api_key = Config.get_openrouter_key(openrouter_api_key)
-        self.gemini_api_key = Config.get_gemini_key(gemini_api_key)
-        self.groq_api_key = Config.get_groq_key(groq_api_key)
-
         self.openrouter_model = model or Config.OPENROUTER_MODEL
-        self.gemini_model = Config.GEMINI_MODEL
-        self.groq_model = Config.GROQ_MODEL
-
         self.last_provider_used = None
         self.last_error = None
 
@@ -36,37 +29,18 @@ class AIStockAnalyst:
             if err:
                 self.last_error = f"OpenRouter ({self.openrouter_model}): {err}"
 
-        # 2. Try Gemini API next
-        if self.gemini_api_key and len(self.gemini_api_key) > 5:
-            res, err = self._call_gemini_with_retry(prompt, self.gemini_model)
-            if res:
-                self.last_provider_used = f"Google Gemini ({self.gemini_model})"
-                return res
-            if err:
-                self.last_error = f"Gemini ({self.gemini_model}): {err}"
-
-        # 3. Try Groq API next
-        if self.groq_api_key and len(self.groq_api_key) > 5:
-            res, err = self._call_groq_with_retry(prompt, self.groq_model)
-            if res:
-                self.last_provider_used = f"Groq ({self.groq_model})"
-                return res
-            if err:
-                self.last_error = f"Groq ({self.groq_model}): {err}"
-
-        # Fallback to local rule-based engine
-        if not self.last_error and not (self.openrouter_api_key or self.gemini_api_key or self.groq_api_key):
-            self.last_error = "No API Key configured. Enter an OpenRouter, Gemini, or Groq API key in the sidebar or .env file."
+        # 2. Local Fallback Engine if no key or API failure
+        if not self.last_error and not self.openrouter_api_key:
+            self.last_error = "No OpenRouter API Key provided. Enter your free key in the sidebar or .env file."
 
         self.last_provider_used = "Local Rule-Based Heuristic Engine"
         return self._generate_fallback_analysis(company_name, ratios, tables, news_articles)
 
     def generate_comparison_analysis(self, comp1_name: str, comp1_data: dict, comp2_name: str, comp2_data: dict) -> str:
-        """Generates comparative AI report for two stocks with complete financial statements context."""
+        """Generates comparative AI report for two stocks using OpenRouter free models."""
         prompt = self._build_comparison_prompt(comp1_name, comp1_data, comp2_name, comp2_data)
         self.last_error = None
 
-        # 1. OpenRouter
         if self.openrouter_api_key and len(self.openrouter_api_key) > 5:
             res, err = self._call_openrouter_with_retry(prompt, self.openrouter_model)
             if res:
@@ -74,24 +48,6 @@ class AIStockAnalyst:
                 return res
             if err:
                 self.last_error = f"OpenRouter ({self.openrouter_model}): {err}"
-
-        # 2. Gemini
-        if self.gemini_api_key and len(self.gemini_api_key) > 5:
-            res, err = self._call_gemini_with_retry(prompt, self.gemini_model)
-            if res:
-                self.last_provider_used = f"Google Gemini ({self.gemini_model})"
-                return res
-            if err:
-                self.last_error = f"Gemini ({self.gemini_model}): {err}"
-
-        # 3. Groq
-        if self.groq_api_key and len(self.groq_api_key) > 5:
-            res, err = self._call_groq_with_retry(prompt, self.groq_model)
-            if res:
-                self.last_provider_used = f"Groq ({self.groq_model})"
-                return res
-            if err:
-                self.last_error = f"Groq ({self.groq_model}): {err}"
 
         self.last_provider_used = "Local Rule-Based Heuristic Comparison Engine"
         return self._generate_fallback_comparison(comp1_name, comp1_data, comp2_name, comp2_data)
@@ -276,81 +232,13 @@ Compare **{comp1_name}** vs **{comp2_name}**. Base all conclusions strictly on s
 
         return None, "OpenRouter service unavailable."
 
-    def _call_gemini_with_retry(self, prompt, model_name, max_retries=2):
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": self.gemini_api_key
-        }
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}]
-        }
-
-        for attempt in range(max_retries + 1):
-            try:
-                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
-                with urllib.request.urlopen(req, timeout=Config.LLM_TIMEOUT) as resp:
-                    res = json.loads(resp.read().decode('utf-8'))
-                    return res['candidates'][0]['content']['parts'][0]['text'], None
-            except socket.timeout:
-                if attempt < max_retries:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                return None, "Gemini request timed out."
-            except urllib.error.HTTPError as e:
-                code = e.code
-                err_text = e.read().decode('utf-8', errors='ignore')
-                if code in (429, 500, 502, 503, 504) and attempt < max_retries:
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                return None, self._parse_http_error("Gemini", code, err_text)
-            except Exception as e:
-                return None, f"Gemini connection error: {str(e)}"
-
-        return None, "Gemini service unavailable."
-
-    def _call_groq_with_retry(self, prompt, model_name, max_retries=2):
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.groq_api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": model_name,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2
-        }
-
-        for attempt in range(max_retries + 1):
-            try:
-                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
-                with urllib.request.urlopen(req, timeout=Config.LLM_TIMEOUT) as resp:
-                    res = json.loads(resp.read().decode('utf-8'))
-                    return res['choices'][0]['message']['content'], None
-            except socket.timeout:
-                if attempt < max_retries:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                return None, "Groq request timed out."
-            except urllib.error.HTTPError as e:
-                code = e.code
-                err_text = e.read().decode('utf-8', errors='ignore')
-                if code in (429, 500, 502, 503, 504) and attempt < max_retries:
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                return None, self._parse_http_error("Groq", code, err_text)
-            except Exception as e:
-                return None, f"Groq connection error: {str(e)}"
-
-        return None, "Groq service unavailable."
-
     def _parse_http_error(self, provider, code, raw_text):
         if code in (401, 403):
             return f"Authentication Error ({code}): Invalid or missing API key for {provider}."
         elif code == 404:
-            return f"Model Not Found Error ({code}): The specified model is not supported."
+            return f"Model Not Found Error ({code}): The specified free model is unavailable."
         elif code == 429:
-            return f"Rate Limit Exceeded ({code}): Provider rate limit reached. Retried without success."
+            return f"Rate Limit Exceeded ({code}): Rate limit reached on OpenRouter free tier."
         elif code >= 500:
             return f"Provider Server Error ({code}): {provider} service is temporarily down."
         return f"HTTP Error {code} from {provider}."
@@ -363,12 +251,12 @@ Compare **{comp1_name}** vs **{comp2_name}**. Base all conclusions strictly on s
 
         report = f"""
 # 📌 EQUITY RESEARCH REPORT: {company_name}
-> ℹ️ **Rule-Based Engine Active**: Connect an `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, or `GROQ_API_KEY` for live AI generation.
+> ℹ️ **Rule-Based Engine Active**: Connect a free `OPENROUTER_API_KEY` in the sidebar for live AI generation.
 
 ## 1. 📊 FINANCIAL PERFORMANCE & QoQ ANALYSIS
-- **Market Capitalization**: ₹{mcap} Cr.
+- **Market Capitalization**: {mcap}
 - **Valuation Multiple (Stock P/E)**: {pe}
-- **Return Metrics**: ROCE: **{roce}%** | ROE: **{roe}%**
+- **Return Metrics**: ROCE: **{roce}** | ROE: **{roe}**
 
 ## 2. 🚧 HEADWINDS & RISK DRAGS
 - Monitor Stock P/E ({pe}) against sector averages and track balance sheet borrowings.
@@ -377,7 +265,7 @@ Compare **{comp1_name}** vs **{comp2_name}**. Base all conclusions strictly on s
 - **Short-Term (0 – 6 Months)**: **HOLD / NEUTRAL**
   - **Justification**: Valuation multiple is P/E **{pe}**. Monitor QoQ revenue acceleration.
 - **Medium-Term (6 – 24 Months)**: **BUY ON DIPS**
-  - **Justification**: ROCE (**{roce}%**) and ROE (**{roe}%**). Track operating cash flow generation.
+  - **Justification**: ROCE (**{roce}**) and ROE (**{roe}**). Track operating cash flow generation.
 - **Long-Term (2 – 5+ Years)**: **BUY**
   - **Justification**: Solid capital efficiency and compounding history.
 
@@ -395,7 +283,7 @@ Compare **{comp1_name}** vs **{comp2_name}**. Base all conclusions strictly on s
 
         return f"""
 # ⚔️ Stock Comparison: {comp1_name} vs {comp2_name}
-> ℹ️ **Rule-Based Engine Active**: Connect an API key in the sidebar for live Comparative AI generation.
+> ℹ️ **Rule-Based Engine Active**: Connect a free OpenRouter API key in the sidebar for live Comparative AI generation.
 
 ### Key Head-to-Head Ratio Comparison:
 - **{comp1_name}**: P/E: {r1.get('Stock P/E', 'N/A')} | ROCE: {r1.get('ROCE', 'N/A')} | ROE: {r1.get('ROE', 'N/A')}

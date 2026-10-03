@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 st.title("📈 Screener.in AI Stock Analyzer & Comparison Engine")
-st.markdown("Automated Financial Extraction + Global Web Headlines + Multi-Provider AI Analysis")
+st.markdown("Automated Financial Extraction + Global Web Headlines + OpenRouter Free AI Models")
 
 # Initialize modules
 fetcher = ScreenerFetcher()
@@ -33,40 +33,27 @@ def cached_get_stock_news(company_name: str, limit: int, freshness_days: int):
 def cached_get_chart_data(company_id: str):
     return fetcher.get_chart_data(company_id)
 
-# Sidebar - API Key Credentials & Model Settings
-st.sidebar.header("🔑 AI Credentials & Model Settings")
+# Sidebar - API Credentials & Settings (OpenRouter & Free Models Only)
+st.sidebar.header("🔑 OpenRouter AI Credentials")
 openrouter_key = st.sidebar.text_input(
-    "OpenRouter API Key (Optional)",
+    "OpenRouter API Key (Free)",
     value=Config.OPENROUTER_API_KEY,
     type="password",
-    help="Get free key from openrouter.ai/keys"
+    help="Get free API key from openrouter.ai/keys"
 )
 
 gemma_model = st.sidebar.selectbox(
-    "Select AI Model:",
+    "Select Free AI Model:",
     [
         Config.OPENROUTER_MODEL,
         "google/gemma-2-9b-it:free",
         "meta-llama/llama-3.3-70b-instruct:free",
         "qwen/qwen-2.5-72b-instruct:free",
-        "deepseek/deepseek-r1:free"
+        "deepseek/deepseek-r1:free",
+        "openrouter/free"
     ],
     index=0,
-    help="Configurable AI model for OpenRouter generation."
-)
-
-gemini_key = st.sidebar.text_input(
-    "Google Gemini API Key (Optional)",
-    value=Config.GEMINI_API_KEY,
-    type="password",
-    help="Get free key from aistudio.google.com"
-)
-
-groq_key = st.sidebar.text_input(
-    "Groq API Key (Optional)",
-    value=Config.GROQ_API_KEY,
-    type="password",
-    help="Get free key from console.groq.com"
+    help="OpenRouter free model tier"
 )
 
 news_freshness = st.sidebar.select_slider(
@@ -78,8 +65,6 @@ news_freshness = st.sidebar.select_slider(
 
 analyst = AIStockAnalyst(
     openrouter_api_key=openrouter_key, 
-    gemini_api_key=gemini_key, 
-    groq_api_key=groq_key,
     model=gemma_model
 )
 
@@ -191,12 +176,13 @@ if mode == "🔍 Single Stock Deep Analysis":
         st.markdown(f"## 📌 {c_data['name']} (`{res['ticker']}`)")
         st.caption(f"📊 Reporting Basis: **{basis_str}** | 🛡️ {scores.get('health_label', '')} (Piotroski F-Score: **{scores.get('piotroski_f_score', 0)}/9**)")
 
-        # Top Ratios Cards
+        # Render ALL Top Financial Ratios dynamically in responsive grid columns
         top_ratios = c_data.get('top_ratios', {})
         if top_ratios:
-            r_cols = st.columns(min(len(top_ratios), 6))
-            for idx, (k, v) in enumerate(list(top_ratios.items())[:6]):
-                with r_cols[idx % 6]:
+            st.markdown("### 📊 Key Financial Ratios")
+            cols = st.columns(4)
+            for idx, (k, v) in enumerate(top_ratios.items()):
+                with cols[idx % 4]:
                     st.metric(label=k, value=v)
 
         st.markdown("---")
@@ -213,7 +199,7 @@ if mode == "🔍 Single Stock Deep Analysis":
 
         # Tab 1: AI Report
         with tab_ai:
-            st.markdown(f"### 🤖 AI Equity Research Report")
+            st.markdown(f"### 🤖 AI Equity Research Report ({gemma_model})")
             if res.get('error'):
                 st.warning(f"⚠️ {res['error']}")
             st.info(f"⚙️ **Engine Provider Used:** `{res.get('provider_used', 'N/A')}`")

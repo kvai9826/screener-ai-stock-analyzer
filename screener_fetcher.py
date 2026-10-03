@@ -36,7 +36,6 @@ class ScreenerFetcher:
         try:
             raw = self._get(search_url)
             results = json.loads(raw)
-            # Standardize extracted ticker in result objects
             for r in results:
                 if 'url' in r:
                     r['ticker'] = extract_ticker(r['url'])
@@ -46,7 +45,7 @@ class ScreenerFetcher:
             return []
 
     def get_company_data(self, ticker_or_url):
-        """Fetches and parses financial tables from Screener.in company page."""
+        """Fetches and parses financial tables and top ratios from Screener.in company page."""
         ticker = extract_ticker(ticker_or_url)
         is_consolidated = True
         url = f"https://www.screener.in/company/{ticker}/consolidated/"
@@ -54,7 +53,6 @@ class ScreenerFetcher:
         try:
             html = self._get(url)
         except Exception:
-            # Fallback to standalone if consolidated page is unavailable
             is_consolidated = False
             url = f"https://www.screener.in/company/{ticker}/"
             try:
@@ -75,14 +73,15 @@ class ScreenerFetcher:
         company_name_el = soup.find('h1')
         company_name = company_name_el.text.strip() if company_name_el else ticker
 
+        # Extract top ratios cleanly with full values (units, High/Low ranges, currency)
         top_ratios = {}
         ratios_li = soup.find_all('li', class_='flex flex-space-between')
         for li in ratios_li:
             name_span = li.find('span', class_='name')
-            value_span = li.find('span', class_='number')
-            if name_span and value_span:
-                key = name_span.text.strip()
-                val = value_span.text.strip().replace('\n', '').replace(' ', '')
+            val_span = li.find('span', class_='value') or li.find('span', class_='number')
+            if name_span and val_span:
+                key = ' '.join(name_span.text.split())
+                val = ' '.join(val_span.text.split())
                 top_ratios[key] = val
 
         tables = {
@@ -94,7 +93,7 @@ class ScreenerFetcher:
             'shareholding': self._parse_section_table(soup, 'shareholding')
         }
 
-        # Compute mathematically correct 9-Signal Piotroski F-Score & Heuristic Health Score
+        # Compute 9-Signal Piotroski F-Score
         scores = self.calculate_piotroski_f_score(tables, top_ratios)
 
         return {
@@ -107,38 +106,21 @@ class ScreenerFetcher:
         }
 
     def calculate_piotroski_f_score(self, tables: dict, top_ratios: dict) -> dict:
-        """
-        Computes the real 9-signal Piotroski F-Score (0–9 range) using annual financial statements.
-        
-        9 Signals Evaluated:
-        1. ROA > 0 (Positive Net Income / Total Assets)
-        2. CFO > 0 (Positive Operating Cash Flow)
-        3. ΔROA > 0 (ROA current year > ROA prior year)
-        4. Accrual: CFO > Net Income
-        5. ΔLEVER < 0 (Long-term debt ratio decreased)
-        6. ΔLIQUID > 0 (Liquidity/Working Capital improved)
-        7. EQ_OFFER: Share Capital current <= prior year (No share dilution)
-        8. ΔMARGIN > 0 (Operating Profit Margin OPM % increased)
-        9. ΔTURN > 0 (Asset Turnover increased)
-        """
+        """Computes the real 9-signal Piotroski F-Score (0–9 range) using annual financial statements."""
         signals = {}
         pnl = tables.get('profit_loss')
         bs = tables.get('balance_sheet')
         cf = tables.get('cash_flow')
 
         try:
-            # 1. ROA > 0 & 3. ΔROA > 0 & 8. ΔMARGIN > 0
             if pnl is not None and not pnl.empty:
                 net_profit_row = self._find_df_row(pnl, ['Net Profit', 'Profit after tax'])
-                sales_row = self._find_df_row(pnl, ['Sales', 'Revenue'])
                 opm_row = self._find_df_row(pnl, ['OPM %', 'Operating Margin'])
 
-                # Latest two annual periods
                 if net_profit_row is not None and len(net_profit_row) >= 2:
                     curr_np = safe_float(net_profit_row.iloc[-1])
                     prev_np = safe_float(net_profit_row.iloc[-2])
                     
-                    # ROA calculation if Balance Sheet Total Assets available
                     if bs is not None and not bs.empty:
                         assets_row = self._find_df_row(bs, ['Total Assets', 'Total Liabilities'])
                         if assets_row is not None and len(assets_row) >= 2:
@@ -155,7 +137,6 @@ class ScreenerFetcher:
                     prev_opm = safe_float(opm_row.iloc[-2])
                     signals['Margin_Growth'] = 1 if curr_opm > prev_opm else 0
 
-            # 2. CFO > 0 & 4. Accrual (CFO > Net Profit)
             if cf is not None and not cf.empty:
                 cfo_row = self._find_df_row(cf, ['Cash from Operating Activity', 'Operating Cash Flow'])
                 if cfo_row is not None and len(cfo_row) >= 1:
@@ -168,7 +149,6 @@ class ScreenerFetcher:
                             curr_np = safe_float(net_profit_row.iloc[-1])
                             signals['Accrual_Quality'] = 1 if curr_cfo > curr_np else 0
 
-            # 5. ΔLEVER & 6. ΔLIQUID & 7. EQ_OFFER & 9. ΔTURN
             if bs is not None and not bs.empty:
                 borrowings_row = self._find_df_row(bs, ['Borrowings', 'Long Term Borrowings'])
                 capital_row = self._find_df_row(bs, ['Share Capital'])
@@ -198,10 +178,8 @@ class ScreenerFetcher:
         except Exception as e:
             print(f"Error calculating Piotroski signals: {e}")
 
-        # Fallback to key ratios if table signals are incomplete
         score = sum(signals.values())
         
-        # If table data was sparse, complement with top ratios
         if len(signals) < 4:
             roce = safe_float(top_ratios.get('ROCE', '0'))
             roe = safe_float(top_ratios.get('ROE', '0'))
@@ -275,7 +253,6 @@ class ScreenerFetcher:
         return df
 
     def _find_df_row(self, df, possible_names):
-        """Finds a matching metric row in a DataFrame by checking column 0 or index."""
         if df is None or df.empty:
             return None
         metric_col = df.columns[0]
@@ -283,7 +260,6 @@ class ScreenerFetcher:
             metric_val = str(row[metric_col]).strip().lower()
             for name in possible_names:
                 if name.lower() in metric_val:
-                    # Return numeric data columns (excluding metric column)
                     return row.iloc[1:]
         return None
 

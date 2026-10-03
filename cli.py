@@ -9,9 +9,8 @@ from utils import extract_ticker
 def main():
     parser = argparse.ArgumentParser(description="Screener.in AI Stock Analyzer CLI")
     parser.add_argument("stock", type=str, help="Company Name or Ticker (e.g. RELIANCE, TCS, INFY)")
-    parser.add_argument("--openrouter-key", type=str, help="OpenRouter API key")
-    parser.add_argument("--gemini-key", type=str, help="Google Gemini API key")
-    parser.add_argument("--groq-key", type=str, help="Groq API key")
+    parser.add_argument("--openrouter-key", type=str, help="OpenRouter free API key")
+    parser.add_argument("--model", type=str, help="OpenRouter model (e.g. google/gemma-2-9b-it:free)")
     args = parser.parse_args()
 
     stock_query = args.stock
@@ -21,8 +20,7 @@ def main():
     news_fetcher = NewsFetcher()
     analyst = AIStockAnalyst(
         openrouter_api_key=args.openrouter_key,
-        gemini_api_key=args.gemini_key,
-        groq_api_key=args.groq_key
+        model=args.model
     )
 
     search_results = fetcher.search_company(stock_query)

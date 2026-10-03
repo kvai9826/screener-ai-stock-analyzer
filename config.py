@@ -5,17 +5,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    """Centralized Configuration Manager for Screener AI Stock Analyzer."""
+    """Centralized Configuration Manager for Screener AI Stock Analyzer (OpenRouter & Free Models Only)."""
     
-    # API Keys
+    # OpenRouter API Key
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 
-    # Model Selectors (Using non-obsolete active models)
+    # Model Selector (Free Models on OpenRouter)
     OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemma-2-9b-it:free").strip()
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
-    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
 
     # Network & Request Timeouts (seconds)
     DEFAULT_TIMEOUT = int(os.getenv("DEFAULT_TIMEOUT", "20"))
@@ -36,15 +32,4 @@ class Config:
 
     @classmethod
     def get_openrouter_key(cls, override_key=None):
-        key = (override_key or cls.OPENROUTER_API_KEY or "").strip()
-        return key
-
-    @classmethod
-    def get_gemini_key(cls, override_key=None):
-        key = (override_key or cls.GEMINI_API_KEY or "").strip()
-        return key
-
-    @classmethod
-    def get_groq_key(cls, override_key=None):
-        key = (override_key or cls.GROQ_API_KEY or "").strip()
-        return key
+        return (override_key or cls.OPENROUTER_API_KEY or "").strip()
