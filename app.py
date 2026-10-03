@@ -133,7 +133,7 @@ if mode == "🔍 Single Stock Deep Analysis":
             selected_company_info = quick_results[0]
             st.session_state['quick_search'] = None
 
-    # Trigger analysis strictly on Analyze Stock button click
+    # Trigger analysis when Analyze button is clicked OR if quick stock button selected
     if analyze_btn and selected_company_info:
         ticker = extract_ticker(selected_company_info['url'])
         company_id = selected_company_info.get('id', '')
@@ -176,21 +176,29 @@ if mode == "🔍 Single Stock Deep Analysis":
         st.markdown(f"## 📌 {c_data['name']} (`{res['ticker']}`)")
         st.caption(f"📊 Reporting Basis: **{basis_str}** | 🛡️ {scores.get('health_label', '')} (Piotroski F-Score: **{scores.get('piotroski_f_score', 0)}/9**)")
 
-        # Manage Quick Ratios Custom Selector (Just like Screener.in's Manage quick_ratios)
+        # Manage Quick Ratios Custom Selector
         all_metrics = c_data.get('all_metrics', c_data.get('top_ratios', {}))
         top_ratios = c_data.get('top_ratios', {})
         all_keys = list(all_metrics.keys())
         default_keys = list(top_ratios.keys())
+
+        # Ensure custom_ratios is stored safely in session state without Streamlit widget key conflict
+        if 'custom_ratios' not in st.session_state or not st.session_state['custom_ratios']:
+            st.session_state['custom_ratios'] = default_keys
+
+        current_defaults = [k for k in st.session_state['custom_ratios'] if k in all_keys]
+        if not current_defaults and default_keys:
+            current_defaults = [k for k in default_keys if k in all_keys]
 
         with st.expander("⚙️ Manage Quick Ratios / Filter Display Metrics", expanded=False):
             st.markdown("Choose which ratios and financial statement metrics to display on your stock dashboard cards:")
             selected_keys = st.multiselect(
                 "Filter & Select Display Ratios:",
                 options=all_keys,
-                default=st.session_state.get('custom_ratios', default_keys),
-                key="ratio_multiselect"
+                default=current_defaults
             )
-            st.session_state['custom_ratios'] = selected_keys
+            if selected_keys:
+                st.session_state['custom_ratios'] = selected_keys
 
         active_keys = st.session_state.get('custom_ratios', default_keys)
         
@@ -333,8 +341,8 @@ elif mode == "⚔️ Compare Two Stocks":
             d1 = cached_get_company_data(t1)
             d2 = cached_get_company_data(t2)
 
-            comp_report = analyst.generate_analysis(
-                s1_info['name'], d1['top_ratios'], d1['tables'], []
+            comp_report = analyst.generate_comparison_analysis(
+                s1_info['name'], d1, s2_info['name'], d2
             )
 
             st.session_state['comparison_data'] = {
