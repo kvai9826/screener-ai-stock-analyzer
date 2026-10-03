@@ -1,62 +1,98 @@
 # 📈 Screener.in AI Stock Analyzer & Comparison Engine
 
-An automated financial analysis engine that extracts key ratios, QoQ financial tables, cash flows, and FII/DII shareholding patterns directly from [Screener.in](https://www.screener.in/), combines them with recent web news headlines from Google News RSS, and synthesizes grounded multi-horizon equity research reports using OpenRouter free LLM models.
+An open-source financial intelligence platform that extracts key ratios, QoQ financial tables, annual financial statements, cash flows, and FII/DII shareholding patterns directly from [Screener.in](https://www.screener.in/), pairs them with Google News RSS headlines, and synthesizes grounded multi-horizon equity research reports using OpenRouter free LLM models (featuring **Google Gemma 4 31B**).
 
 ---
 
-## 🏗 Architecture Diagram
+## 🏛 High-Level System Architecture (HLD)
 
 ```mermaid
-flowchart TD
-    UI["Streamlit UI (app.py)"] --> CFG["Central Config & .env (config.py)"]
-    UI --> SF["Screener Fetcher (screener_fetcher.py)"]
-    UI --> NF["News Fetcher (news_search.py)"]
-    UI --> AI["AI Analyst Engine (ai_analyst.py)"]
-
-    SF -->|Extract HTML & API| SCR["Screener.in"]
-    NF -->|RSS Search & Source Meta| GNEWS["Google News RSS"]
-
-    AI -->|Primary Free Provider| OR["OpenRouter Free API"]
-    AI -->|Local Fallback| RULE["Deterministic Rule Engine"]
-
-    subgraph Core Features
-        P9["9-Signal Piotroski Score"]
-        QOQ["QoQ & FII Data Parsing"]
-        RATIO["Full Ratio Extraction (Units, High/Low)"]
-        GROUND["Grounded Prompt Guardrails"]
+flowchart TB
+    subgraph UI_Layer ["🖥️ User Interface Layer (Streamlit)"]
+        APP["app.py (Streamlit Application)"]
+        MODE1["🔍 Single Stock Deep Analysis"]
+        MODE2["⚔️ Compare Two Stocks Mode"]
+        UI_METRICS["⚙️ Manage Quick Ratios (Custom Metric Dashboard)"]
+        
+        APP --> MODE1
+        APP --> MODE2
+        MODE1 --> UI_METRICS
     end
 
-    SF --> P9
-    SF --> QOQ
-    SF --> RATIO
-    AI --> GROUND
+    subgraph Config_Layer ["⚙️ Configuration & Utils"]
+        CFG["config.py (Central Dotenv & Timeout Manager)"]
+        UTIL["utils.py (Ticker Resolution & Safe Numeric Parser)"]
+    end
+
+    subgraph Data_Layer ["📡 Data Ingestion & Extraction Engine"]
+        SF["screener_fetcher.py (Screener.in Web Scraper)"]
+        NF["news_search.py (Google News RSS Fetcher)"]
+        P9["calculate_piotroski_f_score (9-Signal Piotroski Engine)"]
+
+        SF -->|Parse HTML Tables & Ratios| SCR["Screener.in Platform"]
+        SF --> P9
+        NF -->|Fetch & Deduplicate RSS Metadata| GNEWS["Google News RSS"]
+    end
+
+    subgraph AI_Layer ["🤖 AI Financial Analyst Engine (ai_analyst.py)"]
+        PROMPT["Grounded Prompt Generator (Cash Flow + Chart + Untrusted Data Guard)"]
+        FALLBACK["Local Deterministic Rule Engine"]
+
+        subgraph OpenRouter_Free_Models ["OpenRouter LLM Endpoints"]
+            G4["google/gemma-4-31b-it:free (Primary Model)"]
+            NEM["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"]
+            LL3["meta-llama/llama-3.3-70b-instruct:free"]
+            DS1["deepseek/deepseek-r1:free"]
+        end
+
+        PROMPT --> G4
+        G4 -.->|If Key Missing / API Failure| FALLBACK
+    end
+
+    UI_Layer <--> Data_Layer
+    UI_Layer <--> AI_Layer
+    Data_Layer --> PROMPT
+    Config_Layer --> UI_Layer
 ```
 
 ---
 
-## ✨ Features
+## ⚠️ Important Financial & Legal Disclaimer
 
-- **Full Financial Ratios Extraction**: Parses all Screener top ratios with complete formatting, including units (`₹`, `Cr.`, `%`) and dual range metrics (`High / Low`).
-- **OpenRouter Free Tier Models**: Powered by OpenRouter free model endpoints (`google/gemma-2-9b-it:free`, `meta-llama/llama-3.3-70b-instruct:free`, `qwen/qwen-2.5-72b-instruct:free`, `deepseek/deepseek-r1:free`).
-- **Session-State Controlled Execution**: `Analyze Stock` and `Compare Two Stocks` buttons strictly control external network and LLM calls, preventing unintended reruns when typing or switching UI tabs.
-- **Robust Ticker Resolution**: Supports absolute URLs (`https://www.screener.in/company/RELIANCE/`), relative paths (`/company/RELIANCE/`), and raw ticker symbols.
-- **Real 9-Signal Piotroski F-Score**: Computes mathematically accurate Piotroski score (0–9) using annual P&L, balance sheet, and operating cash flow metrics.
-- **Consolidated vs Standalone Basis Tracking**: Identifies and badges whether consolidated or standalone financials were retrieved.
-- **Web News Headlines**: Extracts deduplicated news headlines with RSS source metadata and freshness filtering (1, 7, 30 days).
-- **Grounded Prompt Guardrails**: Instructs LLM to treat scraped text as untrusted data, ignore prompt injection, avoid hallucinating unsupplied metrics, and cite exact numbers.
+> [!IMPORTANT]
+> **DISCLAIMER**: This application is strictly an educational and analytical tool designed to extract and organize publicly available financial data. **It does NOT constitute financial advice, investment recommendations, or endorsement to buy or sell securities.**
+>
+> 1. **No SEBI Registration**: The developer and this software are not registered with SEBI (Securities and Exchange Board of India) or any regulatory financial authority.
+> 2. **AI & LLM Hallucinations**: Automated research reports generated by Large Language Models (LLMs) may occasionally omit context, misinterpret complex disclosures, or introduce inaccuracies. Never execute trades based solely on AI-generated summaries.
+> 3. **Independent Verification**: Always independently verify financial statements, corporate announcements, and regulatory filings on official stock exchange platforms ([NSE India](https://www.nseindia.com/) / [BSE India](https://www.bseindia.com/)) and consult a certified SEBI-registered financial advisor before taking any investment action.
 
 ---
 
-## ⚙️ Environment Variables & Setup
+## ✨ Key Features & Capability Matrix
 
-Create a `.env` file in the root directory:
+| Capability | Description | Verification Method |
+| :--- | :--- | :--- |
+| **Interactive Quick Ratios** | Users can select and filter 35+ metrics (Market Cap, P/E, ROCE, ROE, High/Low, OPM %, Debt, Shareholding) to render customized dashboard cards. | Custom multi-select in Streamlit state |
+| **Gemma 4 31B AI Integration** | Default integration with Google Gemma 4 31B (`google/gemma-4-31b-it:free`) via OpenRouter, supported by Nemotron Reasoning and Llama 3.3 70B. | Direct API call with retry backoff |
+| **9-Signal Piotroski F-Score** | Computes mathematically accurate Piotroski score (0–9) evaluating ROA, CFO, ΔROA, Accruals, ΔLeverage, ΔLiquidity, Share Dilution, ΔMargin, and ΔTurnover. | Automated unit tests (`tests/test_screener.py`) |
+| **Full Ratio Formatting** | Extracts complete ratio expressions including dual-value ranges (`High / Low: ₹ 1,728 / 980`) and formatted units (`₹`, `Cr.`, `%`). | `span.value` DOM parsing |
+| **Reporting Basis Identification** | Automatically detects and explicitly labels whether retrieved data is on a **Consolidated** or **Standalone** financial basis. | DOM section header verification |
+| **Deduplicated News Feed** | Retrieves web headlines via Google News RSS, parses `<source>` metadata tags, enforces freshness windows (1, 7, 30 days), and deduplicates canonical URLs. | `news_search.py` metadata parser |
+| **Prompt Injection Protection** | System prompt instructs LLM to treat scraped external text as untrusted DATA, ignore embedded text instructions, and output *"Not available in source data"* for missing metrics. | Prompt grounding guardrails |
+| **Deterministic Failover Engine** | Fallback rule engine generates structured financial summaries if no API key is provided or if network services are offline. | `_generate_fallback_analysis()` |
+
+---
+
+## ⚙️ Environment Configuration
+
+Create a `.env` file in the project root:
 
 ```env
-# OpenRouter Free LLM Configuration
+# Primary LLM Configuration (OpenRouter Free Models)
 OPENROUTER_API_KEY=your_openrouter_free_api_key
-OPENROUTER_MODEL=google/gemma-2-9b-it:free
+OPENROUTER_MODEL=google/gemma-4-31b-it:free
 
-# Configuration Timeouts & Freshness
+# Request Timeouts (seconds)
 DEFAULT_TIMEOUT=20
 LLM_TIMEOUT=45
 DEFAULT_NEWS_FRESHNESS_DAYS=30
@@ -64,21 +100,29 @@ DEFAULT_NEWS_FRESHNESS_DAYS=30
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start Guide
 
-### 1. Installation
+### 1. Environment Setup
 
 ```bash
+# Clone repository
+git clone https://github.com/kvai9826/screener-ai-stock-analyzer.git
+cd screener-ai-stock-analyzer
+
+# Create and activate virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
+
+# Install pinned dependencies
 pip install -r requirements.txt
 ```
 
-### 2. Run Streamlit App
+### 2. Launch Interactive Web App
 
 ```bash
 streamlit run app.py
 ```
+Open your web browser at `http://localhost:8501`.
 
 ### 3. Run Command Line Interface (CLI)
 
@@ -88,16 +132,24 @@ python cli.py INFY
 
 ---
 
-## 🧪 Testing & CI
+## 🧪 Unit Testing & Quality Assurance
 
-Run unit tests 100% offline:
+Run the test suite offline (100% mocked external network calls):
 
 ```bash
 python -m unittest discover -s tests
 ```
 
-Validate code compilation:
+Validate Python syntax compilation across all modules:
 
 ```bash
 python -m compileall .
 ```
+
+---
+
+## 📌 Known Technical Limitations
+
+1. **DOM Layout Sensitivity**: Screener.in DOM layout changes may require updates to table CSS selectors.
+2. **RSS News Reach**: Google News RSS fetches public headlines; paywalled financial subscription publications are excluded.
+3. **Historical Data Range**: Ratios and tables represent the most recent available filings parsed from Screener.in.
