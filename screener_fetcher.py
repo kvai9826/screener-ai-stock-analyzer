@@ -64,6 +64,7 @@ class ScreenerFetcher:
                     'name': ticker,
                     'is_consolidated': False,
                     'top_ratios': {},
+                    'all_metrics': {},
                     'health_scores': self._empty_health_scores(),
                     'tables': {}
                 }
@@ -93,6 +94,9 @@ class ScreenerFetcher:
             'shareholding': self._parse_section_table(soup, 'shareholding')
         }
 
+        # Build full metrics catalog for customizable Quick Ratios
+        all_metrics = self.extract_all_metrics(top_ratios, tables)
+
         # Compute 9-Signal Piotroski F-Score
         scores = self.calculate_piotroski_f_score(tables, top_ratios)
 
@@ -101,9 +105,63 @@ class ScreenerFetcher:
             'name': company_name,
             'is_consolidated': is_consolidated,
             'top_ratios': top_ratios,
+            'all_metrics': all_metrics,
             'health_scores': scores,
             'tables': tables
         }
+
+    def extract_all_metrics(self, top_ratios: dict, tables: dict) -> dict:
+        """Extracts a comprehensive catalog of all company metrics across top ratios and financial statements."""
+        catalog = dict(top_ratios)
+
+        # Quarterly metrics
+        q = tables.get('quarters')
+        if q is not None and not q.empty:
+            for idx, row in q.iterrows():
+                name = str(row.iloc[0]).strip().replace('+', '').strip()
+                val = str(row.iloc[-1]).strip()
+                if name and val and name not in ('Metric', 'Date'):
+                    catalog[f"Quarterly {name}"] = val
+
+        # Profit & Loss metrics
+        pnl = tables.get('profit_loss')
+        if pnl is not None and not pnl.empty:
+            for idx, row in pnl.iterrows():
+                name = str(row.iloc[0]).strip().replace('+', '').strip()
+                val = str(row.iloc[-1]).strip()
+                if name and val and name not in ('Metric', 'Date'):
+                    key = f"Annual {name}"
+                    if key not in catalog:
+                        catalog[key] = val
+
+        # Balance Sheet metrics
+        bs = tables.get('balance_sheet')
+        if bs is not None and not bs.empty:
+            for idx, row in bs.iterrows():
+                name = str(row.iloc[0]).strip().replace('+', '').strip()
+                val = str(row.iloc[-1]).strip()
+                if name and val and name not in ('Metric', 'Date'):
+                    catalog[f"Balance Sheet {name}"] = val
+
+        # Cash Flow metrics
+        cf = tables.get('cash_flow')
+        if cf is not None and not cf.empty:
+            for idx, row in cf.iterrows():
+                name = str(row.iloc[0]).strip().replace('+', '').strip()
+                val = str(row.iloc[-1]).strip()
+                if name and val and name not in ('Metric', 'Date'):
+                    catalog[f"Cash Flow {name}"] = val
+
+        # Shareholding metrics
+        shp = tables.get('shareholding')
+        if shp is not None and not shp.empty:
+            for idx, row in shp.iterrows():
+                name = str(row.iloc[0]).strip().replace('+', '').strip()
+                val = str(row.iloc[-1]).strip()
+                if name and val and name not in ('Metric', 'Date'):
+                    catalog[f"Shareholding {name}"] = val
+
+        return catalog
 
     def calculate_piotroski_f_score(self, tables: dict, top_ratios: dict) -> dict:
         """Computes the real 9-signal Piotroski F-Score (0–9 range) using annual financial statements."""
